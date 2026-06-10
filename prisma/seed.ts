@@ -1,17 +1,35 @@
 import "dotenv/config"
 import { PrismaClient } from '@prisma/client'
-import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
-import { Client } from '@planetscale/database'
 
 function getAdapter() {
   const url = process.env.DATABASE_URL || ''
+
+  if (url.includes('planetscale.com')) {
+    // eslint-disable-next-line
+    const { PrismaPlanetScale } = require('@prisma/adapter-planetscale')
+    // eslint-disable-next-line
+    const { Client } = require('@planetscale/database')
+    const parsed = new URL(url)
+    const client = new Client({
+      host: parsed.hostname,
+      username: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+    })
+    return new PrismaPlanetScale(client)
+  }
+
+  // eslint-disable-next-line
+  const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
   const parsed = new URL(url)
-  const client = new Client({
+  return new PrismaMariaDb({
     host: parsed.hostname,
-    username: decodeURIComponent(parsed.username),
+    port: Number(parsed.port) || 3306,
+    user: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
-  })
-  return new PrismaPlanetScale(client)
+    database: parsed.pathname.replace(/^\//, ''),
+    connectionLimit: 5,
+    allowPublicKeyRetrieval: true,
+  } as any)
 }
 
 const prisma = new PrismaClient({ adapter: getAdapter() })
