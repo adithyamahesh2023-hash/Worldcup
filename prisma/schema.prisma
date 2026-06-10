@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider     = "mysql"
+  provider     = "postgresql"
   relationMode = "prisma"
 }
 
@@ -17,8 +17,8 @@ model User {
   emailVerified DateTime?
   image         String?
   role          Role          @default(USER)
-  championTeamId  String?
-  championTeam    Team?         @relation("ChampionPick", fields: [championTeamId], references: [id])
+  championTeamId String?
+  championTeam   Team?         @relation("ChampionPick", fields: [championTeamId], references: [id])
   accounts      Account[]
   sessions      Session[]
   predictions   Prediction[]
@@ -75,9 +75,9 @@ enum Role {
 model Team {
   id        String   @id @default(cuid())
   name      String   @unique
-  code      String   @unique // FIFA code: BRA, GER, ARG
+  code      String   @unique
   flagUrl   String?
-  group     String?    // A-L for group stage
+  group     String?
   team1Matches     Match[] @relation("Team1Matches")
   team2Matches     Match[] @relation("Team2Matches")
   championPickedBy User[]  @relation("ChampionPick")
@@ -95,11 +95,11 @@ model Match {
   team2Score  Int?
   matchDate   DateTime
   stage       MatchStage
-  group       String?      // A-L for GROUP_STAGE
+  group       String?
   status      MatchStatus  @default(SCHEDULED)
   venue       String?
   visible     Boolean      @default(false)
-  round       Int?         // 32, 16, 8, 4, 2 for knockout
+  round       Int?
   predictions Prediction[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt

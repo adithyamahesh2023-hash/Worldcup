@@ -29,11 +29,11 @@ export default function ProfilePage() {
       fetch('/api/profile').then((r) => r.json()),
       fetch('/api/admin/teams').then((r) => r.json()),
     ]).then(([profile, allTeams]) => {
-      const data = profile as ProfileData
-      setName(data.name || '')
-      setEmail(data.email || '')
-      setChampionTeam(data.championTeam)
-      setChampionLocked(!!data.championTeamId)
+      const data = profile as ProfileData | null
+      setName(data?.name || '')
+      setEmail(data?.email || '')
+      setChampionTeam(data?.championTeam || null)
+      setChampionLocked(!!data?.championTeamId)
       setTeams(allTeams || [])
     })
   }, [])
