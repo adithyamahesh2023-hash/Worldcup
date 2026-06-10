@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #7c3aed;
+  --color-primary-light: #a78bfa;
+  --color-primary-lighter: #c4b5fd;
+  --color-primary-dark: #5b21b6;
+  --color-primary-bg: #f5f3ff;
+  --color-primary-bg-hover: #ede9fe;
+  --color-primary-bg-active: #ddd6fe;
+}
+
+body {
+  background-color: #fafafe;
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark focus:ring-2 focus:ring-primary-light focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply px-3 py-1.5 text-sm font-medium rounded-lg transition-colors;
+  }
+  .btn-danger {
+    @apply px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-light focus:border-primary outline-none transition-shadow;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .hide-spinner {
+    -moz-appearance: textfield;
+  }
+  .hide-spinner::-webkit-inner-spin-button,
+  .hide-spinner::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
