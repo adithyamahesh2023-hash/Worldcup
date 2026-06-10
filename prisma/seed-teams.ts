@@ -1,19 +1,17 @@
 import "dotenv/config"
 import { PrismaClient } from '@prisma/client'
-import { PrismaMariaDb } from '@prisma/adapter-mariadb'
+import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
+import { Client } from '@planetscale/database'
 
 function getAdapter() {
   const url = process.env.DATABASE_URL || ''
   const parsed = new URL(url)
-  return new PrismaMariaDb({
+  const client = new Client({
     host: parsed.hostname,
-    port: Number(parsed.port) || 3306,
-    user: decodeURIComponent(parsed.username),
+    username: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
-    database: parsed.pathname.replace(/^\//, ''),
-    connectionLimit: 5,
-    allowPublicKeyRetrieval: true,
-  } as any)
+  })
+  return new PrismaPlanetScale(client)
 }
 
 const prisma = new PrismaClient({ adapter: getAdapter() })

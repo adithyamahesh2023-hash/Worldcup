@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
-import { PrismaMariaDb } from '@prisma/adapter-mariadb'
+import { PrismaPlanetScale } from '@prisma/adapter-planetscale'
+import { Client } from '@planetscale/database'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
@@ -8,15 +9,12 @@ const globalForPrisma = globalThis as unknown as {
 function getAdapter() {
   const url = process.env.DATABASE_URL || ''
   const parsed = new URL(url)
-  return new PrismaMariaDb({
+  const client = new Client({
     host: parsed.hostname,
-    port: Number(parsed.port) || 3306,
-    user: decodeURIComponent(parsed.username),
+    username: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
-    database: parsed.pathname.replace(/^\//, ''),
-    connectionLimit: 5,
-    allowPublicKeyRetrieval: true,
-  } as any)
+  })
+  return new PrismaPlanetScale(client)
 }
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter: getAdapter() })
