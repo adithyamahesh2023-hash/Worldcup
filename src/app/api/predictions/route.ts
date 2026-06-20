@@ -1,16 +1,36 @@
-import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import type { Prisma } from '@prisma/client'
 
-export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const matchId = searchParams.get('matchId')
+  const userId = searchParams.get('userId')
+
+  if (userId) {
+    const predictions = await prisma.prediction.findMany({
+      where: { userId },
+      select: { matchId: true, team1Score: true, team2Score: true, penaltyWinnerTeamId: true, points: true },
+    })
+    return NextResponse.json(predictions)
   }
 
-  const { matchId, team1Score, team2Score } = await req.json()
+  if (!matchId) {
+    return NextResponse.json({ error: 'matchId or userId is required' }, { status: 400 })
+  }
 
-  if (!matchId || team1Score === undefined || team2Score === undefined) {
+  const predictions = await prisma.prediction.findMany({
+    where: { matchId },
+    select: { userId: true, team1Score: true, team2Score: true, penaltyWinnerTeamId: true, points: true },
+  })
+  return NextResponse.json(predictions)
+}
+
+export async function POST(req: Request) {
+  const { matchId, team1Score, team2Score, userId, penaltyWinnerTeamId } = await req.json()
+  const targetUserId = userId || ''
+
+  if (!matchId || team1Score === undefined || team2Score === undefined || !targetUserId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -18,42 +38,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Scores must be numbers' }, { status: 400 })
   }
 
-  if (team1Score < 0 || team2Score < 0 || team1Score > 20 || team2Score > 20) {
-    return NextResponse.json({ error: 'Scores must be between 0 and 20' }, { status: 400 })
+  if (team1Score < 0 || team2Score < 0) {
+    return NextResponse.json({ error: 'Scores cannot be negative' }, { status: 400 })
   }
 
   const match = await prisma.match.findUnique({ where: { id: matchId } })
-
   if (!match) {
     return NextResponse.json({ error: 'Match not found' }, { status: 404 })
   }
 
-  if (match.status !== 'SCHEDULED') {
-    return NextResponse.json({ error: 'Match has already started or finished' }, { status: 400 })
+  const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } })
+  if (!targetUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  if (new Date(match.matchDate) < new Date()) {
-    return NextResponse.json({ error: 'Match has already started' }, { status: 400 })
+  const updateData: Prisma.PredictionUncheckedUpdateInput = { team1Score, team2Score, points: 0 }
+  if (penaltyWinnerTeamId !== undefined) {
+    updateData.penaltyWinnerTeamId = penaltyWinnerTeamId || null
+  }
+
+  const createData: Prisma.PredictionUncheckedCreateInput = { userId: targetUserId, matchId, team1Score, team2Score }
+  if (penaltyWinnerTeamId) {
+    createData.penaltyWinnerTeamId = penaltyWinnerTeamId
   }
 
   const prediction = await prisma.prediction.upsert({
     where: {
       userId_matchId: {
-        userId: session.user.id,
+        userId: targetUserId,
         matchId,
       },
     },
-    update: {
-      team1Score,
-      team2Score,
-      points: 0,
-    },
-    create: {
-      userId: session.user.id,
-      matchId,
-      team1Score,
-      team2Score,
-    },
+    update: updateData,
+    create: createData,
   })
 
   return NextResponse.json(prediction)

@@ -80,7 +80,8 @@ model Team {
   group     String?
   team1Matches     Match[] @relation("Team1Matches")
   team2Matches     Match[] @relation("Team2Matches")
-  championPickedBy User[]  @relation("ChampionPick")
+  championPickedBy User[]         @relation("ChampionPick")
+  penaltyPredictions Prediction[] @relation("PenaltyWinner")
 
   @@map("teams")
 }
@@ -91,10 +92,12 @@ model Match {
   team2Id     String
   team1       Team         @relation("Team1Matches", fields: [team1Id], references: [id])
   team2       Team         @relation("Team2Matches", fields: [team2Id], references: [id])
-  team1Score  Int?
-  team2Score  Int?
-  matchDate   DateTime
-  stage       MatchStage
+  team1Score      Int?
+  team2Score      Int?
+  team1Penalties  Int?
+  team2Penalties  Int?
+  matchDate       DateTime
+  stage           MatchStage
   group       String?
   status      MatchStatus  @default(SCHEDULED)
   venue       String?
@@ -108,16 +111,18 @@ model Match {
 }
 
 model Prediction {
-  id        String   @id @default(cuid())
-  userId    String
-  matchId   String
-  team1Score Int
-  team2Score Int
-  points    Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(cuid())
+  userId              String
+  matchId             String
+  team1Score          Int
+  team2Score          Int
+  penaltyWinnerTeamId String?
+  penaltyWinnerTeam   Team?    @relation("PenaltyWinner", fields: [penaltyWinnerTeamId], references: [id])
+  points              Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match               Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
   @@unique([userId, matchId])
   @@map("predictions")

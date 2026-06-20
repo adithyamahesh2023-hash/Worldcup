@@ -2,17 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { signOut } from 'next-auth/react'
 
-export default function Navbar({ role }: { role?: string }) {
+export default function Navbar() {
   const pathname = usePathname()
-  const isAdmin = role === 'ADMIN'
 
   const navItems = [
-    { href: '/dashboard', label: 'Predictions' },
+    { href: '/matches', label: 'Matches' },
     { href: '/leaderboard', label: 'Leaderboard' },
-    { href: '/profile', label: 'Profile' },
-    ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
+    { href: '/profile', label: 'Players' },
+    { href: '/admin', label: 'Admin' },
   ]
 
   return (
@@ -20,7 +18,7 @@ export default function Navbar({ role }: { role?: string }) {
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-8">
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href="/admin" className="flex items-center gap-2">
               <span className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white text-sm font-bold">WC</span>
               <span className="text-lg font-bold text-primary hidden sm:inline">World Cup Predictor</span>
             </Link>
@@ -40,12 +38,6 @@ export default function Navbar({ role }: { role?: string }) {
               ))}
             </div>
           </div>
-          <button
-            onClick={() => signOut({ callbackUrl: '/' })}
-            className="px-3 py-2 text-sm text-gray-500 hover:text-primary hover:bg-primary-bg rounded-lg transition-colors"
-          >
-            Sign Out
-          </button>
         </div>
       </div>
     </nav>

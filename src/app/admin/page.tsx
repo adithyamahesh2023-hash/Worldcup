@@ -40,7 +40,21 @@ export default function AdminPage() {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Manage Matches</h2>
-              <p className="text-sm text-gray-400">Create matches, enter scores, mark as finished.</p>
+              <p className="text-sm text-gray-400">Create matches, enter scores, submit predictions.</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link href="/admin/users" className="card p-6 hover:shadow-md transition-all hover:border-primary-lighter group">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-primary-bg rounded-xl flex items-center justify-center group-hover:bg-primary-bg-hover transition-colors">
+              <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Manage Players</h2>
+              <p className="text-sm text-gray-400">Add players and submit predictions for each match.</p>
             </div>
           </div>
         </Link>

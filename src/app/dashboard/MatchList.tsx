@@ -15,6 +15,7 @@ type Prediction = {
   id: string
   team1Score: number
   team2Score: number
+  penaltyWinnerTeamId: string | null
 } | null
 
 type MatchItem = {
@@ -30,6 +31,8 @@ type MatchItem = {
   userPrediction: Prediction
   isPast: boolean
 }
+
+function isKnockout(stage: string) { return stage !== 'GROUP_STAGE' }
 
 function stageLabel(stage: string) {
   const labels: Record<string, string> = {
@@ -66,7 +69,7 @@ export default function MatchList({
 }) {
   const router = useRouter()
   const [saving, setSaving] = useState<string | null>(null)
-  const [predictions, setPredictions] = useState<Record<string, { team1Score: string; team2Score: string }>>({})
+  const [predictions, setPredictions] = useState<Record<string, { team1Score: string; team2Score: string; penaltyWinner: string }>>({})
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -85,7 +88,7 @@ export default function MatchList({
 
   function localTime(dateStr: string) {
     return new Date(dateStr).toLocaleTimeString(undefined, {
-      hour: '2-digit', minute: '2-digit',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
     })
   }
 
@@ -96,7 +99,7 @@ export default function MatchList({
     return acc
   }, {})
 
-  async function savePrediction(matchId: string, team1Score: string, team2Score: string) {
+  async function savePrediction(matchId: string, team1Score: string, team2Score: string, stage: string, penaltyWinner: string) {
     if (!team1Score || !team2Score) {
       setError('Please enter both scores')
       return
@@ -104,10 +107,14 @@ export default function MatchList({
     setError('')
     setSuccess('')
     setSaving(matchId)
+    const body: Record<string, string | number | null> = { matchId, team1Score: Number(team1Score), team2Score: Number(team2Score) }
+    if (isKnockout(stage) && Number(team1Score) === Number(team2Score) && penaltyWinner) {
+      body.penaltyWinnerTeamId = penaltyWinner
+    }
     const res = await fetch('/api/predictions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matchId, team1Score: Number(team1Score), team2Score: Number(team2Score) }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
       const data = await res.json()
@@ -174,8 +181,11 @@ export default function MatchList({
                 const editingT2 = localPred?.team2Score
                 const t1 = editingT1 !== undefined ? editingT1 : match.userPrediction?.team1Score?.toString() ?? ''
                 const t2 = editingT2 !== undefined ? editingT2 : match.userPrediction?.team2Score?.toString() ?? ''
+                const pw = localPred?.penaltyWinner !== undefined ? localPred.penaltyWinner : match.userPrediction?.penaltyWinnerTeamId ?? ''
                 const hasPrediction = !!match.userPrediction
                 const isChanged = editingT1 !== undefined && editingT2 !== undefined
+                const knockout = isKnockout(match.stage)
+                const scoresAreEqual = (editingT1 !== undefined ? localPred?.team1Score : t1) !== '' && (editingT2 !== undefined ? localPred?.team2Score : t2) !== '' && Number(t1) === Number(t2)
 
                 return (
                   <div key={match.id} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col items-center gap-4">
@@ -226,7 +236,7 @@ export default function MatchList({
                                 onChange={(e) =>
                                   setPredictions((p) => ({
                                     ...p,
-                                    [pKey]: { team1Score: e.target.value, team2Score: localPred?.team2Score ?? t2 },
+                                    [pKey]: { team1Score: e.target.value, team2Score: localPred?.team2Score ?? t2, penaltyWinner: localPred?.penaltyWinner ?? pw },
                                   }))
                                 }
                               />
@@ -239,14 +249,37 @@ export default function MatchList({
                                 onChange={(e) =>
                                   setPredictions((p) => ({
                                     ...p,
-                                    [pKey]: { team1Score: localPred?.team1Score ?? t1, team2Score: e.target.value },
+                                    [pKey]: { team1Score: localPred?.team1Score ?? t1, team2Score: e.target.value, penaltyWinner: localPred?.penaltyWinner ?? pw },
                                   }))
                                 }
                               />
                             </div>
+                            {knockout && scoresAreEqual && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">Pens winner:</span>
+                                {[match.team1, match.team2].map((team) => (
+                                  <button
+                                    key={team.id}
+                                    onClick={() =>
+                                      setPredictions((p) => ({
+                                        ...p,
+                                        [pKey]: { team1Score: localPred?.team1Score ?? t1, team2Score: localPred?.team2Score ?? t2, penaltyWinner: team.id },
+                                      }))
+                                    }
+                                    className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                                      pw === team.id
+                                        ? 'bg-primary-bg border-primary text-primary font-medium'
+                                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                                    }`}
+                                  >
+                                    {team.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {/* Predict/Update button below scores */}
                             <button
-                              onClick={() => savePrediction(match.id, t1, t2)}
+                              onClick={() => savePrediction(match.id, t1, t2, match.stage, pw)}
                               disabled={saving === match.id}
                               className={`w-full text-sm py-2 px-4 rounded-lg font-medium transition-colors ${
                                 hasPrediction && !isChanged
@@ -280,6 +313,11 @@ export default function MatchList({
                         </svg>
                         <span className="text-xs text-gray-600">
                           You picked: <strong className="text-primary">{match.userPrediction.team1Score} - {match.userPrediction.team2Score}</strong>
+                          {isKnockout(match.stage) && match.userPrediction.team1Score === match.userPrediction.team2Score && match.userPrediction.penaltyWinnerTeamId && (
+                            <span className="text-xs text-gray-500 ml-1">
+                              (pens: {match.userPrediction.penaltyWinnerTeamId === match.team1.id ? match.team1.name : match.team2.name})
+                            </span>
+                          )}
                         </span>
                       </div>
                     )}
@@ -291,6 +329,11 @@ export default function MatchList({
                           <>
                             <span className="text-xs text-gray-500">Your pick:</span>
                             <span className="text-xs font-semibold text-gray-700">{match.userPrediction.team1Score} - {match.userPrediction.team2Score}</span>
+                            {isKnockout(match.stage) && match.userPrediction.team1Score === match.userPrediction.team2Score && match.userPrediction.penaltyWinnerTeamId && (
+                              <span className="text-xs text-gray-400 ml-1">
+                                (pens: {match.userPrediction.penaltyWinnerTeamId === match.team1.id ? match.team1.name : match.team2.name})
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-xs text-gray-400 italic">No prediction</span>

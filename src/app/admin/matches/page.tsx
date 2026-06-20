@@ -6,8 +6,12 @@ import { useRouter } from 'next/navigation'
 type Team = { id: string; name: string; code: string; group: string | null }
 type Match = {
   id: string; team1: Team; team2: Team; team1Score: number | null; team2Score: number | null
+  team1Penalties: number | null; team2Penalties: number | null
   matchDate: string; stage: string; group: string | null; status: string; visible: boolean
 }
+type AppUser = { id: string; name: string | null }
+
+function isKnockout(stage: string) { return stage !== 'GROUP_STAGE' }
 
 const STAGES = ['GROUP_STAGE', 'ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINALS', 'SEMI_FINALS', 'FINAL', 'THIRD_PLACE']
 const STAGE_LABELS: Record<string, string> = {
@@ -16,30 +20,6 @@ const STAGE_LABELS: Record<string, string> = {
 }
 const GROUPS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
 
-const TIMEZONES = [
-  { label: 'UTC+5:30 (India)', offset: 5.5 },
-  { label: 'UTC+8 (China, SG, PH)', offset: 8 },
-  { label: 'UTC+7 (Thailand, Vietnam)', offset: 7 },
-  { label: 'UTC+4 (UAE, Gulf)', offset: 4 },
-  { label: 'UTC+3 (Arabia, Qatar)', offset: 3 },
-  { label: 'UTC+2 (Europe Eastern)', offset: 2 },
-  { label: 'UTC+1 (Europe Central)', offset: 1 },
-  { label: 'UTC+0 (UK, Portugal)', offset: 0 },
-  { label: 'UTC-4 (US Eastern)', offset: -4 },
-  { label: 'UTC-5 (US Central)', offset: -5 },
-  { label: 'UTC-6 (US Mountain)', offset: -6 },
-  { label: 'UTC-7 (US Pacific)', offset: -7 },
-]
-
-function toUTCDate(dateStr: string, timeStr: string, offsetHours: number): string {
-  const sign = offsetHours >= 0 ? '+' : '-'
-  const abs = Math.abs(offsetHours)
-  const h = Math.floor(abs)
-  const m = (abs - h) * 60
-  const tz = `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  const isoWithTz = `${dateStr}T${timeStr}:00${tz}`
-  return new Date(isoWithTz).toISOString()
-}
 
 function StageBadge({ stage }: { stage: string }) {
   const colors: Record<string, string> = {
@@ -55,13 +35,14 @@ export default function AdminMatchesPage() {
   const router = useRouter()
   const [matches, setMatches] = useState<Match[]>([])
   const [teams, setTeams] = useState<Team[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
-    team1Id: '', team2Id: '', matchDate: '', matchTime: '', stage: 'GROUP_STAGE', group: '', timezone: '5.5',
+    team1Id: '', team2Id: '', stage: 'GROUP_STAGE', group: '', matchDate: '',
   })
 
-  useEffect(() => { Promise.all([fetchMatches(), fetchTeams()]) }, [])
+  useEffect(() => { Promise.all([fetchMatches(), fetchTeams(), fetchUsers()]) }, [])
 
   async function fetchMatches() {
     const res = await fetch('/api/admin/matches')
@@ -72,18 +53,22 @@ export default function AdminMatchesPage() {
     const res = await fetch('/api/admin/teams')
     setTeams(await res.json())
   }
+  async function fetchUsers() {
+    const res = await fetch('/api/admin/users')
+    setUsers(await res.json())
+  }
 
   function resetForm() {
-    setForm({ team1Id: '', team2Id: '', matchDate: '', matchTime: '', stage: 'GROUP_STAGE', group: '', timezone: '5.5' })
+    setForm({ team1Id: '', team2Id: '', stage: 'GROUP_STAGE', group: '', matchDate: '' })
     setEditingId(null)
   }
 
   function editMatch(match: Match) {
     const d = new Date(match.matchDate)
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
     setForm({
       team1Id: match.team1.id, team2Id: match.team2.id,
-      matchDate: d.toISOString().split('T')[0], matchTime: d.toTimeString().split(':').slice(0, 2).join(':'),
-      stage: match.stage, group: match.group || '', timezone: '5.5',
+      stage: match.stage, group: match.group || '', matchDate: local,
     })
     setEditingId(match.id)
   }
@@ -91,15 +76,14 @@ export default function AdminMatchesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (form.team1Id === form.team2Id) { alert('Teams must be different'); return }
-    if (!form.matchTime) { alert('Match time is required for prediction locking'); return }
-    const utcIso = toUTCDate(form.matchDate, form.matchTime, Number(form.timezone))
     const res = await fetch('/api/admin/matches', {
       method: editingId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...(editingId ? { id: editingId } : {}),
         team1Id: form.team1Id, team2Id: form.team2Id,
-        matchDate: utcIso, stage: form.stage,
+        matchDate: form.matchDate || null,
+        stage: form.stage,
         group: form.group || null,
       }),
     })
@@ -113,21 +97,11 @@ export default function AdminMatchesPage() {
     const res = await fetch('/api/admin/matches', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: matchId, status: 'SCHEDULED', team1Score: null, team2Score: null }),
+      body: JSON.stringify({ id: matchId, status: 'SCHEDULED', team1Score: null, team2Score: null, team1Penalties: null, team2Penalties: null }),
     })
     if (!res.ok) { alert('Failed to reopen'); return }
     fetchMatches()
     router.refresh()
-  }
-
-  async function toggleVisibility(match: Match) {
-    const res = await fetch('/api/admin/matches', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: match.id, visible: !match.visible }),
-    })
-    if (!res.ok) { alert('Failed to toggle visibility'); return }
-    fetchMatches()
   }
 
   async function deleteMatch(id: string) {
@@ -141,6 +115,8 @@ export default function AdminMatchesPage() {
   const filteredTeams = form.stage === 'GROUP_STAGE' && form.group
     ? teams.filter(t => t.group === form.group)
     : teams
+
+  const [predictionMatch, setPredictionMatch] = useState<Match | null>(null)
 
   return (
     <div>
@@ -160,7 +136,7 @@ export default function AdminMatchesPage() {
 
       <form onSubmit={handleSubmit} className="card p-6 mb-8">
         <h2 className="font-semibold text-gray-900 mb-4">{editingId ? 'Edit Match' : 'New Match'}</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1.5">Team 1</label>
             <select required value={form.team1Id} onChange={(e) => setForm({ ...form, team1Id: e.target.value })} className="input-field">
@@ -184,36 +160,30 @@ export default function AdminMatchesPage() {
             </select>
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1.5">Date & Time</label>
+            <input
+              type="datetime-local"
+              value={form.matchDate}
+              onChange={(e) => setForm({ ...form, matchDate: e.target.value })}
+              className="input-field text-sm"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-600 mb-1.5">Stage</label>
             <select value={form.stage} onChange={(e) => setForm({ ...form, stage: e.target.value })} className="input-field">
               {STAGES.map(s => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Group</label>
-            <select value={form.group} onChange={(e) => setForm({ ...form, group: e.target.value, team1Id: '', team2Id: '' })} className="input-field">
-              <option value="">None</option>
-              {GROUPS.map(g => <option key={g} value={g}>Group {g}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Date</label>
-            <input required type="date" value={form.matchDate} onChange={(e) => setForm({ ...form, matchDate: e.target.value })} className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Time</label>
-            <input required type="time" value={form.matchTime} onChange={(e) => setForm({ ...form, matchTime: e.target.value })} className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Timezone</label>
-            <select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} className="input-field">
-              {TIMEZONES.map(tz => (
-                <option key={tz.offset} value={tz.offset}>{tz.label}</option>
-              ))}
-            </select>
-          </div>
+          {form.stage === 'GROUP_STAGE' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1.5">Group</label>
+              <select value={form.group} onChange={(e) => setForm({ ...form, group: e.target.value, team1Id: '', team2Id: '' })} className="input-field">
+                <option value="">None</option>
+                {GROUPS.map(g => <option key={g} value={g}>Group {g}</option>)}
+              </select>
+            </div>
+          )}
         </div>
-        <p className="text-xs text-gray-400 mt-2">Time is converted to UTC for storage. All users see it in their local timezone.</p>
         <div className="mt-4 flex gap-2">
           <button type="submit" className="btn-primary text-sm">{editingId ? 'Update Match' : 'Add Match'}</button>
           {editingId && <button type="button" onClick={resetForm} className="btn-ghost text-gray-500 hover:bg-gray-50">Cancel</button>}
@@ -231,9 +201,8 @@ export default function AdminMatchesPage() {
               <thead>
                 <tr className="border-b border-gray-50">
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Match</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Stage</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Date</th>
-                  <th className="text-center px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Stage</th>
                   <th className="text-center px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Result</th>
                   <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -246,49 +215,32 @@ export default function AdminMatchesPage() {
                         <span className="text-gray-300 mx-1.5">vs</span>
                         {match.team2.name}
                       </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">
+                        {new Date(match.matchDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        <span className="text-gray-300 mx-1">·</span>
+                        {new Date(match.matchDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+                      </td>
                       <td className="px-5 py-3.5">
                         <StageBadge stage={match.stage} />
                         {match.group && <span className="ml-1.5 text-xs text-gray-400">G{match.group}</span>}
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-500">
-                        {new Date(match.matchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <button
-                          onClick={() => toggleVisibility(match)}
-                          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg transition-colors ${
-                            match.visible
-                              ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
-                          }`}
-                        >
-                          {match.visible ? (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                              Visible
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                              </svg>
-                              Hidden
-                            </>
-                          )}
-                        </button>
-                      </td>
                       <td className="px-5 py-3.5 text-center">
                         {match.status === 'FINISHED' ? (
-                          <span className="font-semibold text-gray-900">{match.team1Score} : {match.team2Score}</span>
+                          <span className="font-semibold text-gray-900">
+                            {match.team1Score} : {match.team2Score}
+                            {isKnockout(match.stage) && match.team1Penalties !== null && match.team2Penalties !== null && (
+                              <span className="text-xs text-gray-400 ml-1">
+                                (pens {match.team1Penalties}-{match.team2Penalties})
+                              </span>
+                            )}
+                          </span>
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <button onClick={() => editMatch(match)} className="btn-ghost text-primary hover:bg-primary-bg mr-1">Edit</button>
+                        <button onClick={() => setPredictionMatch(match)} className="btn-ghost text-purple-600 hover:bg-purple-50 mr-1">Predictions</button>
                         {match.status === 'FINISHED' ? (
                           <button onClick={() => reopenMatch(match.id)}
                             className="btn-ghost text-amber-600 hover:bg-amber-50 mr-1">Reopen</button>
@@ -305,6 +257,13 @@ export default function AdminMatchesPage() {
             matches={matches.filter(m => m.status === 'SCHEDULED')}
             onSave={() => { fetchMatches(); router.refresh() }}
           />
+
+          <PredictionSection
+            match={predictionMatch}
+            users={users}
+            onClose={() => setPredictionMatch(null)}
+            onSaved={() => { fetchMatches(); router.refresh() }}
+          />
         </>
       )}
     </div>
@@ -313,15 +272,20 @@ export default function AdminMatchesPage() {
 
 function ResultEntrySection({ matches, onSave }: { matches: Match[]; onSave: () => void }) {
   const [expanded, setExpanded] = useState(false)
-  const [scores, setScores] = useState<Record<string, { t1: string; t2: string }>>({})
+  const [scores, setScores] = useState<Record<string, { t1: string; t2: string; p1: string; p2: string }>>({})
 
   async function saveAll() {
     for (const [id, s] of Object.entries(scores)) {
       if (!s.t1 || !s.t2) continue
+      const body: Record<string, string | number | null> = { id, team1Score: Number(s.t1), team2Score: Number(s.t2), status: 'FINISHED' }
+      if (s.p1 !== '' && s.p2 !== '') {
+        body.team1Penalties = Number(s.p1)
+        body.team2Penalties = Number(s.p2)
+      }
       await fetch('/api/admin/matches', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, team1Score: Number(s.t1), team2Score: Number(s.t2), status: 'FINISHED' }),
+        body: JSON.stringify(body),
       })
     }
     onSave()
@@ -344,24 +308,41 @@ function ResultEntrySection({ matches, onSave }: { matches: Match[]; onSave: () 
           <div className="space-y-3">
             {matches.map((m) => (
               <div key={m.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                <span className="w-28 text-sm font-medium text-right text-gray-700 truncate">{m.team1.name}</span>
+                <span className="w-24 text-sm font-medium text-right text-gray-700 truncate">{m.team1.name}</span>
                 <input
                   type="number" min="0" max="20"
                   className="w-12 h-9 text-center input-field text-sm font-medium"
                   value={scores[m.id]?.t1 ?? ''}
-                  onChange={(e) => setScores({ ...scores, [m.id]: { t1: e.target.value, t2: scores[m.id]?.t2 ?? '' } })}
+                  onChange={(e) => setScores({ ...scores, [m.id]: { t1: e.target.value, t2: scores[m.id]?.t2 ?? '', p1: scores[m.id]?.p1 ?? '', p2: scores[m.id]?.p2 ?? '' } })}
                 />
                 <span className="text-gray-300 font-medium">:</span>
                 <input
                   type="number" min="0" max="20"
                   className="w-12 h-9 text-center input-field text-sm font-medium"
                   value={scores[m.id]?.t2 ?? ''}
-                  onChange={(e) => setScores({ ...scores, [m.id]: { t1: scores[m.id]?.t1 ?? '', t2: e.target.value } })}
+                  onChange={(e) => setScores({ ...scores, [m.id]: { t1: scores[m.id]?.t1 ?? '', t2: e.target.value, p1: scores[m.id]?.p1 ?? '', p2: scores[m.id]?.p2 ?? '' } })}
                 />
-                <span className="w-28 text-sm font-medium text-gray-700 truncate">{m.team2.name}</span>
-                <span className="text-xs text-gray-400 ml-auto">
-                  {new Date(m.matchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
+                <span className="w-24 text-sm font-medium text-gray-700 truncate">{m.team2.name}</span>
+                {isKnockout(m.stage) && scores[m.id]?.t1 !== '' && scores[m.id]?.t2 !== '' && Number(scores[m.id]?.t1) === Number(scores[m.id]?.t2) && (
+                  <div className="flex items-center gap-1.5 ml-2 text-xs text-gray-400">
+                    <span className="text-gray-400">pens</span>
+                    <input
+                      type="number" min="0" max="20"
+                      className="w-9 h-7 text-center input-field text-xs font-medium hide-spinner"
+                      placeholder=""
+                      value={scores[m.id]?.p1 ?? ''}
+                      onChange={(e) => setScores({ ...scores, [m.id]: { t1: scores[m.id]?.t1 ?? '', t2: scores[m.id]?.t2 ?? '', p1: e.target.value, p2: scores[m.id]?.p2 ?? '' } })}
+                    />
+                    <span className="text-gray-300">:</span>
+                    <input
+                      type="number" min="0" max="20"
+                      className="w-9 h-7 text-center input-field text-xs font-medium hide-spinner"
+                      placeholder=""
+                      value={scores[m.id]?.p2 ?? ''}
+                      onChange={(e) => setScores({ ...scores, [m.id]: { t1: scores[m.id]?.t1 ?? '', t2: scores[m.id]?.t2 ?? '', p1: scores[m.id]?.p1 ?? '', p2: e.target.value } })}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -370,6 +351,163 @@ function ResultEntrySection({ matches, onSave }: { matches: Match[]; onSave: () 
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+function PredictionSection({
+  match,
+  users,
+  onClose,
+  onSaved,
+}: {
+  match: Match | null
+  users: AppUser[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [predictions, setPredictions] = useState<Record<string, { t1: string; t2: string; penaltyWinner: string }>>({})
+  const [existing, setExisting] = useState<Record<string, { team1Score: number; team2Score: number; penaltyWinnerTeamId: string | null } | null>>({})
+  const [savingState, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!match) return
+    fetch(`/api/predictions?matchId=${match.id}`)
+      .then((r) => r.json())
+      .then((data: { userId: string; team1Score: number; team2Score: number; penaltyWinnerTeamId: string | null }[]) => {
+        const map: Record<string, { team1Score: number; team2Score: number; penaltyWinnerTeamId: string | null } | null> = {}
+        for (const p of data) {
+          map[p.userId] = p
+        }
+        setExisting(map)
+      })
+  }, [match])
+
+  if (!match) return null
+
+  const m = match
+  const knockout = isKnockout(m.stage)
+
+  async function saveAll() {
+    setSaving(true)
+    for (const user of users) {
+      const p = predictions[user.id]
+      if (!p?.t1 || !p?.t2) continue
+      const body: Record<string, string | number | null> = { matchId: m.id, userId: user.id, team1Score: Number(p.t1), team2Score: Number(p.t2) }
+      const s1 = Number(p.t1), s2 = Number(p.t2)
+      if (knockout && s1 === s2 && p.penaltyWinner) {
+        body.penaltyWinnerTeamId = p.penaltyWinner
+      } else if (s1 !== s2) {
+        body.penaltyWinnerTeamId = null
+      }
+      await fetch('/api/predictions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    }
+    setSaving(false)
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="mt-6">
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-gray-900">
+              Predictions — {match.team1.name} vs {match.team2.name}
+            </h3>
+            <p className="text-xs text-gray-400">Enter scores for each player</p>
+          </div>
+          <button onClick={onClose} className="btn-ghost text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {users.length === 0 && (
+            <p className="text-sm text-gray-400 py-4 text-center">No players yet. Add them in Manage Users.</p>
+          )}
+          {[...users].sort((a, b) => {
+            const aHas = existing[a.id] ? 1 : 0
+            const bHas = existing[b.id] ? 1 : 0
+            return aHas - bHas
+          }).map((u) => {
+            const existingPred = existing[u.id]
+            const p = predictions[u.id] || {
+              t1: existingPred?.team1Score?.toString() ?? '',
+              t2: existingPred?.team2Score?.toString() ?? '',
+              penaltyWinner: existingPred?.penaltyWinnerTeamId ?? '',
+            }
+            const s1 = Number(p.t1), s2 = Number(p.t2)
+            const scoresAreEqual = p.t1 !== '' && p.t2 !== '' && s1 === s2
+
+            return (
+              <div key={u.id} className="flex flex-col gap-2 py-2 border-b border-gray-50 last:border-0">
+                <div className="flex items-center gap-3">
+                  <span className="w-28 text-sm font-medium text-gray-700 truncate">{u.name || 'Player'}</span>
+                  <input
+                    type="number"
+                    className="w-12 h-9 text-center input-field text-sm font-medium hide-spinner"
+                    inputMode="numeric"
+                    value={p.t1}
+                    onChange={(e) =>
+                      setPredictions((prev) => ({
+                        ...prev,
+                        [u.id]: { t1: e.target.value, t2: prev[u.id]?.t2 ?? existingPred?.team2Score?.toString() ?? '', penaltyWinner: prev[u.id]?.penaltyWinner ?? existingPred?.penaltyWinnerTeamId ?? '' },
+                      }))
+                    }
+                  />
+                  <span className="text-gray-300 font-medium">:</span>
+                  <input
+                    type="number"
+                    className="w-12 h-9 text-center input-field text-sm font-medium hide-spinner"
+                    inputMode="numeric"
+                    value={p.t2}
+                    onChange={(e) =>
+                      setPredictions((prev) => ({
+                        ...prev,
+                        [u.id]: { t1: prev[u.id]?.t1 ?? existingPred?.team1Score?.toString() ?? '', t2: e.target.value, penaltyWinner: prev[u.id]?.penaltyWinner ?? existingPred?.penaltyWinnerTeamId ?? '' },
+                      }))
+                    }
+                  />
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {existingPred ? 'Saved' : ''}
+                  </span>
+                </div>
+                {knockout && scoresAreEqual && (
+                  <div className="flex items-center gap-2 ml-[140px]">
+                    <span className="text-xs text-gray-400">Pens winner:</span>
+                    {[m.team1, m.team2].map((team) => (
+                      <button
+                        key={team.id}
+                        onClick={() =>
+                          setPredictions((prev) => ({
+                            ...prev,
+                            [u.id]: { ...prev[u.id], penaltyWinner: team.id },
+                          }))
+                        }
+                        className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                          p.penaltyWinner === team.id
+                            ? 'bg-primary-bg border-primary text-primary font-medium'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {team.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button onClick={saveAll} disabled={savingState} className="btn-primary text-sm">
+            {savingState ? 'Saving...' : 'Save All Predictions'}
+          </button>
+          <button onClick={onClose} className="btn-ghost text-gray-500 hover:bg-gray-50 text-sm">Close</button>
+        </div>
+      </div>
     </div>
   )
 }
