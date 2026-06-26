@@ -319,6 +319,19 @@ export default function MatchesPage() {
                         {selectedMatch.status === 'FINISHED' && existing && (
                           <span className="ml-2 badge bg-primary-bg text-primary text-xs font-bold">{existing.points} pts</span>
                         )}
+                        {selectedMatch.status === 'FINISHED' && knockout && existing && selectedMatch.team1Penalties !== null && selectedMatch.team2Penalties !== null && (
+                          <span className={`ml-1.5 badge text-xs font-medium ${
+                            existing.penaltyWinnerTeamId
+                              ? existing.penaltyWinnerTeamId === (selectedMatch.team1Penalties > selectedMatch.team2Penalties ? selectedMatch.team1.id : selectedMatch.team2.id)
+                                ? 'bg-green-50 text-green-700'
+                                : 'bg-red-50 text-red-500'
+                              : 'bg-gray-100 text-gray-400'
+                          }`}>
+                            Pens: {existing.penaltyWinnerTeamId
+                              ? (existing.penaltyWinnerTeamId === selectedMatch.team1.id ? selectedMatch.team1.code : selectedMatch.team2.code)
+                              : '—'}
+                          </span>
+                        )}
                       </div>
                     </div>
                     {selectedMatch.status !== 'FINISHED' && knockout && scoresAreEqual && (
